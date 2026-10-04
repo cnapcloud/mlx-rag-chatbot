@@ -1,0 +1,63 @@
+version: 1.3.12
+cache: true
+
+# 엔드포인트 카테고리 없이 모델을 메뉴 최상단에 바로 노출
+modelSpecs:
+  enforce: false # true 면 아래 목록 외 엔드포인트/모델 선택 불가
+  prioritize: true # 새 대화 시 default 스펙을 우선 선택
+  addedEndpoints: ["agents"] # 스펙 외에 메뉴에 함께 노출할 엔드포인트
+  list:
+    - name: qwen3-8b
+      label: qwen3-8b
+      default: true
+      preset:
+        endpoint: LiteLLM
+        model: qwen3-8b
+        modelLabel: qwen3-8b # 답변 작성자 이름. 없으면 endpoint 의 modelDisplayLabel(LiteLLM)이 표시됨
+    - name: gemini-3.5-flash-lite
+      label: gemini-3.5-flash-lite
+      preset:
+        endpoint: LiteLLM
+        model: gemini-3.5-flash-lite
+        modelLabel: gemini-3.5-flash-lite
+
+endpoints:
+  agents:
+    disableBuilder: false
+    capabilities: ["file_search", "actions", "tools", "web_search", "skills", "artifacts"] # execute_code 제외
+  custom:
+    - name: LiteLLM
+      apiKey: "${LITELLM_MASTER_KEY}"
+      baseURL: "http://litellm:4000/v1"
+      models:
+        default:
+          - qwen3-8b
+          - gemini-3.5-flash-lite
+        fetch: false
+      tokenConfig:
+        qwen3-8b:
+          prompt: 0
+          completion: 0
+          context: 20000 # litellm.yaml max_input_tokens(28672)보다 작게
+      titleConvo: true
+      titleModel: current_model
+      modelDisplayLabel: LiteLLM
+      addParams:
+        litellm_proxy: true
+      headers:
+        x-litellm-end-user-id: "{{LIBRECHAT_USER_EMAIL}}"
+
+mcpSettings:
+  allowedAddresses:
+    - "host.docker.internal:3001"
+    - "host.docker.internal:3000" # simple-rag
+
+mcpServers:
+  everything:
+    type: streamable-http # SSE는 유휴 시 연결이 끊겨 계속 재연결됨 → streamable-http 사용
+    url: "http://host.docker.internal:3001/mcp"
+    sseReadTimeout: 3600000 # GET SSE 스트림 유휴 허용 시간 (1시간)
+
+  simple-rag:
+    type: streamable-http # stateless 모드라 세션/SSE 스트림 없이 POST 만 사용
+    url: "http://host.docker.internal:3000/mcp"

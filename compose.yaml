@@ -1,0 +1,116 @@
+services:
+
+  mongodb:
+    image: mongo:7
+    container_name: mongodb
+    restart: unless-stopped
+    volumes:
+      - ./data/mongodb:/data/db
+
+  librechat:
+    image: ghcr.io/danny-avila/librechat:latest
+    container_name: librechat
+    restart: unless-stopped
+    depends_on:
+      mongodb:
+        condition: service_started
+      mcp-everything:
+        condition: service_healthy # MCP 서버가 뜬 뒤에 librechat 시작 (먼저 뜨면 SSE 연결 실패)
+    ports:
+      - "3080:3080"
+
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3080
+
+      MONGO_URI: mongodb://mongodb:27017/LibreChat
+
+      CREDS_KEY: change-me-32-char-secret
+      CREDS_IV: change-me-16-char
+
+      JWT_SECRET: change-me-jwt-secret
+      JWT_REFRESH_SECRET: change-me-refresh-secret
+
+      ALLOW_REGISTRATION: "true"
+
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY} # librechat.yaml 의 apiKey 에서 참조
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./config/librechat.yaml:/app/librechat.yaml:ro
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: litellm
+    restart: unless-stopped
+    command: ["--config", "/app/litellm.yaml", "--port", "4000"]
+    depends_on:
+      - postgres
+    ports:
+      - "4000:4000"
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY} # .env 에서 주입, librechat 의 apiKey 와 동일해야 함
+      GEMINI_API_KEY: ${GEMINI_API_KEY} # fallback용 Gemini 키, 셸 환경변수 또는 .env 에서 주입
+      DATABASE_URL: postgresql://litellm:password@postgres:5432/litellm # Admin UI(/ui) 사용에 필요
+      STORE_MODEL_IN_DB: "True" # UI 에서 모델 추가/수정 허용
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./config/litellm.yaml:/app/litellm.yaml:ro
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: postgres
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5434:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+      - ./config/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d rag"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  simple-rag:
+    build: ./simple-rag
+    container_name: simple-rag
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgresql://rag:password@postgres:5432/rag
+      VLLM_BASE_URL: http://host.docker.internal:8100/v1
+      VLLM_MODEL: mlx-community/Qwen3-8B-4bit
+      EMBEDDING_MODEL: mlx-community/bge-m3-mlx-fp16
+      EMBEDDING_DIMENSIONS: 1024
+      RAG_TOP_K: 3
+      RAG_MIN_SIMILARITY: 0.35
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  mcp-everything:
+    image: node:22
+    command:
+      - sh
+      - -c
+      - |
+        npm install -g @modelcontextprotocol/server-everything mcp-proxy
+        mcp-proxy --port 3001 -- npx @modelcontextprotocol/server-everything
+    ports:
+      - "3001:3001"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(3001,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 60 # 기동 시 npm install 시간 포함
+

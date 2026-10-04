@@ -1,0 +1,62 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+.yarn/
+
+# Environment variables (NEVER commit secrets)
+.env
+.env.local
+.env.*.local
+.env.development
+.env.test
+.env.production
+
+# Production / Build outputs
+dist/
+build/
+out/
+.next/
+.nuxt/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Runtime data & PID files
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by testing frameworks (Jest, Vitest, Mocha)
+coverage/
+*.lcov
+.nyc_output/
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+
+# IDE and Editor settings
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Temporary files & caches
+.eslintcache
+.stylelintcache
+.cache/
+.parcel-cache/
+.turbo/
