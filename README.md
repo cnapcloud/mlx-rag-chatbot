@@ -229,3 +229,7 @@ rm -rf data/mongodb data/postgres
 - **LLM·임베딩:** Groq + Ollama(nomic, 768차원)를 vllm-mlx(Qwen3-8B, bge-m3 1024차원)로 교체했습니다. nomic용 prefix는 제거했습니다.
 - **기능 추가:** 문서 목록·삭제, MCP 서버(`/mcp`, 도구 3개), `Dockerfile`, 샘플 PDF를 추가했습니다.
 - **설정 변경:** `RAG_TOP_K` 기본값을 5에서 3으로 바꿨고, 루트 [compose.yaml](compose.yaml)에서 LibreChat, LiteLLM과 함께 실행합니다.
+
+## 라이선스
+
+이 저장소는 [MIT License](LICENSE)로 공개합니다. 다만 `simple-rag/`는 [sunflowerIU/ai-simple-rag](https://github.com/sunflowerIU/ai-simple-rag)를 가져와 수정한 것이고, 원본이 ISC로 표기되어 있어 `simple-rag/package.json`에도 ISC를 그대로 두었습니다.
