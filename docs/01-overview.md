@@ -144,10 +144,8 @@ docker compose logs -f librechat               # 에러 확인
 저장소에 샘플 문서가 들어 있다. `POST /documents`로 올리면 텍스트 추출, 청크 분할, 임베딩, pgvector 저장이 순서대로 이뤄진다.
 
 ```bash
-cd simple-rag
-
-curl -F "file=@samples/sample-policy.txt;type=text/plain" http://localhost:3000/documents
-curl -F "file=@samples/cheongajin-notice.pdf;type=application/pdf" http://localhost:3000/documents
+curl -F "file=@simple-rag/samples/sample-policy.txt;type=text/plain" http://localhost:3000/documents
+curl -F "file=@simple-rag/samples/cheongajin-notice.pdf;type=application/pdf" http://localhost:3000/documents
 ```
 
 성공하면 `201`과 함께 문서 ID와 청크 수가 돌아온다.

@@ -111,10 +111,8 @@ docker compose logs -f librechat         # 에러 확인
 `simple-rag`의 `POST /documents`로 파일을 올리면 텍스트 추출 → 청크 분할 → 임베딩 → pgvector 저장이 이뤄집니다.
 
 ```bash
-cd simple-rag
-
-curl -F "file=@samples/sample-policy.txt;type=text/plain" http://localhost:3000/documents
-curl -F "file=@samples/cheongajin-notice.pdf;type=application/pdf" http://localhost:3000/documents
+curl -F "file=@simple-rag/samples/sample-policy.txt;type=text/plain" http://localhost:3000/documents
+curl -F "file=@simple-rag/samples/cheongajin-notice.pdf;type=application/pdf" http://localhost:3000/documents
 ```
 
 성공하면 `201`과 함께 문서 ID와 청크 수가 돌아옵니다.
@@ -179,7 +177,7 @@ curl -X POST http://localhost:3000/ask \
 ```
 
 - `/ask`는 유사도 `0.35` 미만(`RAG_MIN_SIMILARITY`)이면 `I could not find this in the provided documents.`를 돌려줍니다.
-- 검색 상위 `3`개(`RAG_TOP_K`)를 근거로 씁니다.
+- 벡터 검색 상위 `5`개(`RAG_TOP_K`)를 리랭크해, 그중 상위 `3`개(`RAG_RERANK_TOP_N`)를 근거로 씁니다.
 
 ### 6-2. 챗봇에서 (MCP)
 
@@ -227,8 +225,8 @@ rm -rf data/mongodb data/postgres
 `simple-rag/`는 [sunflowerIU/ai-simple-rag](https://github.com/sunflowerIU/ai-simple-rag)(ISC 표기, LICENSE 파일 없음)를 가져와 **수정한 것**입니다. 원본 파이프라인 설명은 [simple-rag/README.md](simple-rag/README.md)에 있고, 설정값이 다르면 이 README가 기준입니다.
 
 - **LLM·임베딩:** Groq + Ollama(nomic, 768차원)를 vllm-mlx(Qwen3-8B, bge-m3 1024차원)로 교체했습니다. nomic용 prefix는 제거했습니다.
-- **기능 추가:** 문서 목록·삭제, MCP 서버(`/mcp`, 도구 3개), `Dockerfile`, 샘플 PDF를 추가했습니다.
-- **설정 변경:** `RAG_TOP_K` 기본값을 5에서 3으로 바꿨고, 루트 [compose.yaml](compose.yaml)에서 LibreChat, LiteLLM과 함께 실행합니다.
+- **기능 추가:** 리랭크(bge-reranker-v2-m3, `RAG_RERANK_TOP_N`), 문서 목록·삭제, MCP 서버(`/mcp`, 도구 3개), `Dockerfile`, 샘플 PDF를 추가했습니다.
+- **설정 변경:** 루트 [compose.yaml](compose.yaml)에서 LibreChat, LiteLLM과 함께 실행합니다.
 
 ## 라이선스
 
