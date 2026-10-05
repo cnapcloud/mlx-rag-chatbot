@@ -20,6 +20,36 @@ export async function askLlm(input: { system: string; prompt: string }) {
   return result.text;
 }
 
+export async function rerank(input: {
+  query: string;
+  documents: string[];
+  topN: number;
+}): Promise<Array<{ index: number; score: number }>> {
+  const response = await fetch(`${env.VLLM_BASE_URL}/rerank`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${env.VLLM_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: env.RERANK_MODEL,
+      query: input.query,
+      documents: input.documents,
+      top_n: input.topN,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Rerank failed:${response.status}`);
+  }
+
+  const data = (await response.json()) as {
+    results: Array<{ index: number; relevance_score: number }>;
+  };
+
+  return data.results.map((r) => ({ index: r.index, score: r.relevance_score }));
+}
+
 export async function createEmbedding(text: string): Promise<number[]> {
   const response = await fetch(`${env.VLLM_BASE_URL}/embeddings`, {
     method: "POST",

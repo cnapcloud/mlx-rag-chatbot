@@ -93,7 +93,9 @@ services:
       VLLM_MODEL: mlx-community/Qwen3-8B-4bit
       EMBEDDING_MODEL: mlx-community/bge-m3-mlx-fp16
       EMBEDDING_DIMENSIONS: 1024
-      RAG_TOP_K: 3
+      RERANK_MODEL: BAAI/bge-reranker-v2-m3
+      RAG_TOP_K: 5
+      RAG_RERANK_TOP_N: 3
       RAG_MIN_SIMILARITY: 0.35
     extra_hosts:
       - "host.docker.internal:host-gateway"

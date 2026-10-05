@@ -1,6 +1,6 @@
 import { PDFParse } from "pdf-parse";
 import { db } from "./db.js";
-import { askLlm, createEmbedding } from "./ai.js";
+import { askLlm, createEmbedding, rerank } from "./ai.js";
 import { env } from "./env.js";
 
 function vectorToSql(vector: number[]) {
@@ -175,24 +175,40 @@ export async function searchDocuments(input: {
         [queryVector, env.RAG_TOP_K],
       );
 
-  return result.rows.map((row) => ({
-    id: row.id,
-    documentId: row.document_id,
-    chunkIndex: row.chunk_index,
-    content: row.content,
-    similarity: Number(row.similarity),
-  }));
+  // 유사도 임계값은 검색 단계에서 적용한다. /search, /ask, MCP 가 같은 기준을 쓰고 리랭크 대상도 줄어든다
+  const chunks = result.rows
+    .map((row) => ({
+      id: row.id,
+      documentId: row.document_id,
+      chunkIndex: row.chunk_index,
+      content: row.content,
+      similarity: Number(row.similarity),
+      rerankScore: undefined as number | undefined,
+    }))
+    .filter((chunk) => chunk.similarity >= env.RAG_MIN_SIMILARITY);
+
+  // RAG_RERANK_TOP_N=0 이면 리랭크 없이 벡터 검색 결과(top_k)를 그대로 전달
+  if (env.RAG_RERANK_TOP_N === 0 || chunks.length === 0) {
+    return chunks;
+  }
+
+  const ranked = await rerank({
+    query: input.question,
+    documents: chunks.map((chunk) => chunk.content),
+    topN: Math.min(env.RAG_RERANK_TOP_N, chunks.length),
+  });
+
+  return ranked.flatMap(({ index, score }) => {
+    const chunk = chunks[index];
+    return chunk ? [{ ...chunk, rerankScore: score }] : [];
+  });
 }
 
 export async function askDocument(input: {
   question: string;
   documentId?: string;
 }) {
-  const chunks = await searchDocuments(input);
-
-  const strongChunks = chunks.filter(
-    (chunk) => chunk.similarity >= env.RAG_MIN_SIMILARITY,
-  );
+  const strongChunks = await searchDocuments(input);
 
   if (strongChunks.length === 0) {
     return {

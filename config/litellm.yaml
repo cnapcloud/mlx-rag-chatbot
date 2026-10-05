@@ -4,6 +4,8 @@ model_list:
       model: openai/mlx-community/Qwen3-8B-4bit
       api_base: http://host.docker.internal:8100/v1
       api_key: not-needed
+      timeout: 30 # 응답 없는 서버는 30초 후 fallback
+      stream_timeout: 30 # 스트리밍 요청용, LibreChat 은 스트리밍으로 요청하므로 이 값이 적용됨
     model_info:
       max_input_tokens: 28672 # VLLM_CONTEXT(32768) - VLLM_MAX_TOKENS(4096)
 
@@ -32,3 +34,9 @@ litellm_settings:
   fallbacks:
     - gemini-3.5-flash-lite: ["gemini-3.1-flash-lite"] # 503(과부하)/타임아웃 시 자동 전환
     - qwen3-8b: ["gemini-3.5-flash-lite"] # vllm-mlx 장애 시 자동 전환
+
+general_settings:
+  background_health_checks: true # 백그라운드 헬스체크로 죽은 deployment 를 요청 전에 라우팅 풀에서 제외
+  health_check_interval: 10 # 헬스체크 주기(초), 기본 300
+  enable_health_check_routing: true # 헬스체크 실패 deployment 를 라우팅에서 제외 → 연결 불가 시 타임아웃 대기 없이 바로 fallback
+  background_health_check_model_groups: ["qwen3-8b"] # gemini 는 호출 비용이 생기므로 제외, vllm-mlx 만 점검

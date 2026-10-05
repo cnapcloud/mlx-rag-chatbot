@@ -5,12 +5,17 @@ import z from "zod";
 import { deleteDocument, listDocuments, searchDocuments } from "./rag.js";
 
 const toolInput = {
-  question: z.string().min(1).max(1000).describe("자연어 질문"),
+  question: z.string().min(1).max(1000).describe("Natural-language question"),
+  // 작은 모델은 빈 문자열/플레이스홀더를 채워 보내므로 스키마는 string 으로 두고 핸들러에서 검증한다
   documentId: z
-    .uuid()
+    .string()
     .optional()
-    .describe("특정 문서로 검색 범위를 제한할 때의 문서 ID"),
+    .describe(
+      "OPTIONAL. Omit this field to search all documents (default). Set only to restrict to one document, with an exact UUID from list_documents. Never send an empty string or a made-up id.",
+    ),
 };
+
+const uuidSchema = z.uuid();
 
 function createMcpServer() {
   const server = new McpServer({ name: "simple-rag", version: "1.0.0" });
@@ -20,7 +25,8 @@ function createMcpServer() {
     {
       title: "List documents",
       description:
-        "임베딩되어 검색 가능한 문서 목록(id, 파일명, 청크 수, 업로드 시각)을 반환한다. search_documents 의 documentId 로 범위를 좁힐 때 id 를 사용한다.",
+        "List uploaded files (id, filename, chunk count, upload time). Metadata only, no document content, so it cannot answer questions about what the documents say. " +
+        "Use it when asked which documents exist, or to look up a document id. To answer questions about content, use search_documents instead; no need to call this first.",
     },
     async () => {
       const documents = await listDocuments();
@@ -33,9 +39,9 @@ function createMcpServer() {
     {
       title: "Delete document",
       description:
-        "문서 하나와 그 임베딩(청크)을 영구 삭제한다. 되돌릴 수 없으므로 반드시 사용자가 삭제를 명시적으로 요청한 경우에만, list_documents 로 확인한 정확한 id 로 호출한다. 전체 삭제는 지원하지 않는다.",
+        "Permanently delete one document and its embeddings. Irreversible: call only when the user explicitly asks, with an exact id from list_documents. Bulk delete is not supported.",
       inputSchema: {
-        documentId: z.uuid().describe("삭제할 문서 ID (list_documents 의 id)"),
+        documentId: z.uuid().describe("Document id to delete (from list_documents)"),
       },
     },
     async ({ documentId }) => {
@@ -59,11 +65,25 @@ function createMcpServer() {
     {
       title: "Search documents",
       description:
-        "업로드된 문서에서 질문과 유사한 청크를 벡터 검색해 원문과 유사도를 반환한다. 답변은 반환된 청크만 근거로 작성하고, 관련 내용이 없으면 문서에서 찾지 못했다고 답한다.",
+        "Semantic search over the content of uploaded documents; returns the most relevant text chunks with similarity scores. " +
+        "Use it for any question about what the documents say. Searches all documents unless documentId is given. Not for listing files (use list_documents). " +
+        "Answer only from the returned chunks; if nothing relevant is found, say so.",
       inputSchema: toolInput,
     },
-    async (input) => {
-      const chunks = await searchDocuments(input);
+    async ({ question, documentId }) => {
+      const id = documentId?.trim() || undefined; // "" → 전체 검색
+      if (id && !uuidSchema.safeParse(id).success) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: `Invalid documentId "${id}". Omit documentId to search all documents, or use an exact id from list_documents.`,
+            },
+          ],
+        };
+      }
+      const chunks = await searchDocuments({ question, documentId: id });
       return { content: [{ type: "text", text: JSON.stringify(chunks) }] };
     },
   );

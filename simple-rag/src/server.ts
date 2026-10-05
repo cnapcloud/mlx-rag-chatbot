@@ -4,6 +4,7 @@ import {
   askDocument,
   deleteDocument,
   ingestDocument,
+  listDocuments,
   searchDocuments,
 } from "./rag.js";
 import z from "zod";
@@ -58,6 +59,10 @@ app.post("/documents", async (request, reply) => {
   return reply.code(201).send({
     data: result,
   });
+});
+
+app.get("/documents", async () => {
+  return { data: await listDocuments() };
 });
 
 const documentParamsSchema = z.object({

@@ -38,7 +38,7 @@ endpoints:
         qwen3-8b:
           prompt: 0
           completion: 0
-          context: 20000 # litellm.yaml max_input_tokens(28672)보다 작게
+          context: 24000 # litellm.yaml max_input_tokens(28672)보다 작게
       titleConvo: true
       titleModel: current_model
       modelDisplayLabel: LiteLLM

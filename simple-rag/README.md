@@ -262,6 +262,7 @@ EMBEDDING_MODEL=mlx-community/bge-m3-mlx-fp16
 EMBEDDING_DIMENSIONS=1024
 
 RAG_TOP_K=5
+RAG_RERANK_TOP_N=3
 RAG_MIN_SIMILARITY=0.5
 ```
 
@@ -425,6 +426,7 @@ The RAG pipeline exposes configuration for retrieval behavior, including:
 
 ```env
 RAG_TOP_K=5
+RAG_RERANK_TOP_N=3
 RAG_MIN_SIMILARITY=0.5
 ```
 
@@ -433,6 +435,12 @@ RAG_MIN_SIMILARITY=0.5
 Controls how many candidate chunks are retrieved from the vector database.
 
 A larger value provides more context but can also introduce irrelevant information.
+
+### `RAG_RERANK_TOP_N`
+
+Number of chunks kept after reranking the `RAG_TOP_K` candidates with the cross-encoder (`RERANK_MODEL`, default `BAAI/bge-reranker-v2-m3`, served by vllm-mlx `/v1/rerank`).
+
+Set to `0` to skip reranking and pass the vector-search results through as-is.
 
 ### `RAG_MIN_SIMILARITY`
 
@@ -510,7 +518,7 @@ Some natural next steps for the project include:
 * [ ] Add metadata filtering
 * [ ] Add HNSW indexing for larger collections
 * [ ] Add hybrid keyword + vector search
-* [ ] Add reranking
+* [x] Add reranking
 * [ ] Add conversation memory
 * [ ] Add streaming LLM responses
 * [ ] Add automated RAG evaluation
