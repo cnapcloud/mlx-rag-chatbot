@@ -24,7 +24,7 @@ modelSpecs:
 endpoints:
   agents:
     disableBuilder: false
-    capabilities: ["file_search", "actions", "tools", "web_search", "skills", "artifacts"] # execute_code 제외
+    capabilities: ["tools"] # MCP 도구만 허용 (web_search, execute_code 등 제외)
   custom:
     - name: LiteLLM
       apiKey: "${LITELLM_MASTER_KEY}"
@@ -42,8 +42,6 @@ endpoints:
       titleConvo: true
       titleModel: current_model
       modelDisplayLabel: LiteLLM
-      addParams:
-        litellm_proxy: true
       headers:
         x-litellm-end-user-id: "{{LIBRECHAT_USER_EMAIL}}"
 

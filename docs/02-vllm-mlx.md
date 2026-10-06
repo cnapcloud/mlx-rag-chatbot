@@ -2,14 +2,14 @@
 
 [1편](01-overview.md)에서 전체 구성을 띄워 봤다. 이번 편은 그중 호스트에서 도는 vllm-mlx를 다룬다. 모델을 띄우는 일은 쉬웠고, 어려웠던 것은 **한정된 메모리 안에서 긴 RAG 프롬프트를 감당하게 만드는 일**이었다. 각 설정값이 왜 그 값인지, 메모리를 어떻게 나눠 썼는지를 정리한다.
 
-이 글의 설정과 명령은 GitHub 저장소에 미리 준비된 코드를 기준으로 한다. 저장소를 아직 받지 않았다면 먼저 받고, 이후 명령은 받은 디렉터리에서 실행한다. 사전 준비와 전체 스택 실행은 [1편](01-overview.md)의 3~4절을 따른다.
+이 글은 GitHub 저장소에 포함된 코드를 기준으로 설명한다. 저장소를 아직 클론하지 않았다면 다음과 같이 클론한다. 사전 준비와 전체 스택 실행은 [1편](01-overview.md)의 3~4절을 따른다.
 
 ```bash
 git clone https://github.com/cnapcloud/mlx-rag-chatbot.git
 cd mlx-rag-chatbot
 ```
 
-> 이 글의 설정값은 **M4 MacBook Pro, 48GB 메모리, GPU 16코어** 기준이다. 이 기기에 맞춘 선택이고, 범용 권장값이 아니다. 성능 측정 수치는 뒤쪽의 성능 측정과 이슈 절에만 있으며 이 기기에서 칸마다 한 번 잰 값이다. 나머지 값들은 구조에서 계산한 추정치와 겪은 문제에서 나왔다. 직접 확인한 값은 그렇게 표시했다.
+> 이 글의 설정은 M4 MacBook Pro(48GB 메모리, GPU 16코어)를 기준으로 한다. 모든 설정과 테스트는 이 환경을 기준으로 진행했다.
 
 ---
 
@@ -24,9 +24,9 @@ Mac용 로컬 LLM 도구가 대체로 한 사람의 채팅에 맞춰져 있는 �
 - 텍스트, 이미지, 영상, 오디오, 임베딩, 리랭크를 한 서버에서 서빙
 - 도구 호출 파서와 reasoning 모델 지원
 
-여기에 개별 VRAM 제약 없이 CPU와 GPU가 큰 메모리를 나눠 쓰는 Apple Silicon의 Unified Memory가 더해져, 노트북에서도 중형 모델을 서버 형태로 돌리는 것이 현실적인 선택지가 됐다. (README 설명을 바탕으로 한 해석이다.) [waybarrios/vllm-mlx](https://github.com/waybarrios/vllm-mlx) 저장소는 확인 시점(2026-10-04)에 GitHub 스타 약 1.6k, Apache 2.0 라이선스였다.
+참고로 vllm-mlx는 vLLM과는 별개 프로젝트다. OpenAI 호환 API와 설계 개념(continuous batching, KV cache)은 닮았지만, 서버 옵션 이름(vLLM의 `--max-model-len`에 해당하는 옵션이 여기서는 `--max-kv-size`다)과 모델 포맷(MLX 변환본), 실행 환경(macOS 전용)이 달라 vLLM 설정을 그대로 옮길 수 없다.
 
-참고로 vllm-mlx는 vLLM과는 별개 프로젝트다. OpenAI 호환 API와 설계 개념(continuous batching, KV cache)은 닮았지만, 서버 옵션 이름(`--max-model-len`은 `--max-kv-size`)과 모델 포맷(MLX 변환본), 실행 환경(macOS 전용)이 달라 vLLM 설정을 그대로 옮길 수 없다.
+이 글에서는 vllm-mlx를 로컬 RAG의 모델 서버로 사용한다. 위 기능 중 채팅, 임베딩, 리랭크 모델을 사용하며(2절), 이미지·영상·오디오는 사용하지 않는다. Apple Silicon은 CPU와 GPU가 Unified Memory를 공유하기 때문에 별도의 VRAM 용량에 묶이지 않고 비교적 큰 모델을 노트북에서도 구동할 수 있다. 다만 이 메모리를 모델, KV cache, OS가 나눠 써야 하므로, 긴 RAG 프롬프트를 감당하려면 메모리 설계가 필요하다.
 
 ---
 
@@ -56,7 +56,7 @@ RAG는 질문을 벡터로 바꾸고(임베딩), 검색 결과를 재정렬하�
 
 ---
 
-## 3. 설치 및 실행
+## 3. 시작하기
 
 ### 3.1 Makefile
 
@@ -321,6 +321,7 @@ curl http://localhost:8100/v1/chat/completions \
 
 - **입력 길이 제한 미지원**
   - `--max-kv-size`를 넘는 입력도 오류 없이 처리되고 앞부분이 유지됨 (37K 확인)
+  - 설계상으로는 한도를 넘으면 오래된 앞쪽 토큰이 밀려나야 하므로, 동작 원인은 추가 조사가 필요함
   - [#795](https://github.com/waybarrios/vllm-mlx/issues/795)는 설정하지 않은 경우만 다룸
 - **12GiB 캐시는 3명의 31K 세션에 부족:** 엔트리 3개(약 13.4GB)가 안 들어가 2개만 남음, 재계산 가능성(추정)
 

@@ -2,20 +2,20 @@
 
 [2편](02-vllm-mlx.md)에서 모델 서버의 메모리를 설계했다. 이번 편은 그 서버를 호출하는 simple-rag를 다룬다. 문서를 청크로 나눠 pgvector에 저장하고, 질문이 오면 관련 청크를 찾아 답을 만들며, 같은 검색을 MCP 도구로 챗봇에 내놓는 서비스다. 코드가 작아서 RAG의 각 단계를 눈으로 따라갈 수 있고, 단계마다 점수와 응답이 어떻게 나오는지도 직접 확인해 볼 수 있다.
 
-이 글의 설정과 명령은 GitHub 저장소에 미리 준비된 코드를 기준으로 한다. 저장소를 아직 받지 않았다면 먼저 받고, 이후 명령은 받은 디렉터리에서 실행한다. simple-rag는 임베딩과 답변 생성을 vllm-mlx에 맡기므로, 모델 서버를 포함한 전체 스택을 띄우는 방법은 [1편](01-overview.md)의 3~4절을 따른다.
+이 글은 GitHub 저장소에 포함된 코드를 기준으로 설명한다. 저장소를 아직 클론하지 않았다면 다음과 같이 클론한다. simple-rag는 임베딩과 답변 생성을 vllm-mlx에 맡기므로, 모델 서버를 포함한 전체 스택을 띄우는 방법은 [1편](01-overview.md)의 3~4절을 따른다.
 
 ```bash
 git clone https://github.com/cnapcloud/mlx-rag-chatbot.git
 cd mlx-rag-chatbot
 ```
 
-> 이 시리즈의 구성과 설정값은 **M4 MacBook Pro, 48GB 메모리, GPU 16코어** 기준이다. 이 기기에 맞춘 선택이며, 범용 권장값이 아니다.
-
 ---
 
-## 1. 개요
+## 1. RAG 소개
 
-simple-rag는 [sunflowerIU/ai-simple-rag](https://github.com/sunflowerIU/ai-simple-rag)(ISC 라이선스)를 가져와 이 시리즈의 구성에 맞게 고친 것이다. 원본은 RAG 프레임워크 없이 Fastify, PostgreSQL(pgvector), AI SDK만으로 `문서 → 텍스트 추출 → 청크 → 임베딩 → 벡터 검색 → LLM 답변`을 구현한 프로젝트다. 청크 분할도, 프롬프트 조립도, 출처 표기도 모두 한 파일(`rag.ts`)에 드러나 있다. 변경 후 [`src/`](../simple-rag/src/) 전체가 약 700줄이라 한 번에 읽을 수 있고, 핵심은 [`rag.ts`](../simple-rag/src/rag.ts)와 [`mcp.ts`](../simple-rag/src/mcp.ts)다.
+RAG(Retrieval-Augmented Generation, 검색 증강 생성)는 LLM이 답하기 전에 외부 문서에서 관련 내용을 먼저 검색하고, 그 내용을 프롬프트에 함께 넣어 답을 생성하게 하는 방식이다. 이 프로젝트에서는 문서를 임베딩해 pgvector에 저장해 두고, 질문이 오면 유사한 청크를 찾아 vllm-mlx 모델에 컨텍스트로 넘긴다. 모델을 다시 학습시키지 않고도 내 문서를 근거로 최신 정보를 답하게 할 수 있으며, 근거 없는 답(환각)도 줄일 수 있다.
+
+이 글에서 다루는 simple-rag는 [sunflowerIU/ai-simple-rag](https://github.com/sunflowerIU/ai-simple-rag)(ISC 라이선스)를 가져와 이 시리즈의 구성에 맞게 고친 것이다. 원본은 RAG 프레임워크 없이 Fastify, PostgreSQL(pgvector), AI SDK만으로 `문서 → 텍스트 추출 → 청크 → 임베딩 → 벡터 검색 → LLM 답변`을 구현한 프로젝트다. 청크 분할도, 프롬프트 조립도, 출처 표기도 모두 한 파일(`rag.ts`)에 드러나 있다. 변경 후 [`src/`](../simple-rag/src/) 전체가 약 700줄이라 한 번에 읽을 수 있고, 핵심은 [`rag.ts`](../simple-rag/src/rag.ts)와 [`mcp.ts`](../simple-rag/src/mcp.ts)다.
 
 원본 코드는 답변 생성을 Groq, 임베딩을 Ollama에 맡기는 구성이었다. 이 시리즈에서는 모델 호출을 모두 vllm-mlx로 옮기고, 리랭크와 문서 목록·삭제, MCP 서버를 추가했다.
 
@@ -33,7 +33,7 @@ simple-rag는 [sunflowerIU/ai-simple-rag](https://github.com/sunflowerIU/ai-simp
 
 ---
 
-## 2. RAG 실행
+## 2. 시작하기
 
 ### 2.1 서버 실행
 
@@ -312,7 +312,7 @@ app.post("/mcp", async (request, reply) => {
 - **답변 품질**: thinking 예산에 따른 답변 단축 검증
 - **보안**: REST와 MCP의 인증 및 접근 제어
 
-참고로, 운영 환경을 고려한 RAG 구현과 구성은 [rag-docs.cnapcloud.com](https://rag-docs.cnapcloud.com)에서 확인할 수 있다.
+참고로, 상용 수준의 RAG 서비스는 [rag-docs.cnapcloud.com](https://rag-docs.cnapcloud.com)을 사용하여 구축할 있다.
 
 ---
 

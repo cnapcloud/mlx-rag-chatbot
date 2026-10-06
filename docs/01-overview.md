@@ -1,6 +1,6 @@
 # vllm-mlx 기반 RAG 챗봇 구축 (1) - 전체 구성과 설치
 
-RAG 챗봇은 모델 서빙, 임베딩, 벡터 저장소, 검색 API, 모델 게이트웨이, 챗봇 UI가 맞물려 동작한다. 각 요소는 따로 보면 단순하지만, 실제로 연결해 보기 전에는 전체를 어떻게 구성해야 하는지, 어디가 병목이고 어디서 실패하는지 알기 어렵다. 그래서 이 시리즈에서는 이 요소들을 로컬 환경에 모두 올려 하나의 챗봇으로 연결해 보며 아키텍처를 검증한다. 1편에서는 전체 구성을 살펴보고, 설치부터 동작 확인까지 끝까지 따라 해 본다. 각 구성요소의 설계와 설정값의 근거는 2편부터 하나씩 다룬다.
+RAG 챗봇을 만들려면 LLM 서빙부터 임베딩, 리랭킹, 벡터 저장소, 검색 API, 모델 게이트웨이, 챗봇 UI까지 여러 기술 요소가 필요하다. 이 시리즈는 이들을 로컬 환경에 직접 구동하고 연결하면서 각 기술의 역할과 연동 방식을 확인하고, 실제 RAG 챗봇 구축에 필요한 기술 조합을 PoC 형태로 검증한다. 1편에서는 전체 구성을 살펴보고, 설치부터 동작 확인까지 따라 하며 확인한다. 각 요소의 설계와 설정값의 근거는 2편부터 하나씩 다룬다.
 
 **vllm-mlx 기반 RAG 챗봇 구축 시리즈**
 
@@ -8,16 +8,17 @@ RAG 챗봇은 모델 서빙, 임베딩, 벡터 저장소, 검색 API, 모델 게
 - [(2) 모델 서버 구성과 메모리 설계](02-vllm-mlx.md)
 - [(3) 문서 검색 API와 MCP 서버](03-simple-rag.md)
 - [(4) LiteLLM 게이트웨이와 Fallback 전략](04-litellm.md)
-
-> 이 시리즈는 아키텍처 검증용 데모이고, 프로덕션 구성이 아니다. 특히 RAG 부분은 전체 흐름을 확인할 수 있는 수준으로만 구현했다. 청킹, 수집 파이프라인, 검색 품질, 접근 제어는 프로덕션으로 가려면 따로 설계해야 한다. 인프라는 **M4 MacBook Pro, 48GB 메모리, GPU 16코어**에서 Docker Compose로 올린 단일 노드 구성이다. 모든 설정값은 이 기기에 맞춘 선택이며, 범용 권장값도 벤치마크 결과도 아니다.
+- [(5) LibreChat UI와 MCP 도구 연동](05-librechat.md)
+  
+> 이 글의 설정은 M4 MacBook Pro(48GB 메모리, GPU 16코어)를 기준으로 한다. 모든 설정과 테스트는 이 환경을 기준으로 진행했다.
 
 ---
 
 ## 1. 프로젝트 소개
 
-이 프로젝트는 RAG 챗봇의 전체 아키텍처를 검증해 보기 위해 모델 서빙, 문서 저장과 검색, 챗봇 연동, 장애 대응을 다음과 같이 구성했다.
+이 프로젝트는 RAG 챗봇 아키텍처 PoC를 위해 모델 서빙, 문서 저장 및 검색, 챗봇 연동, 장애 대응에 다음 기술 요소를 사용한다.
 
-- Apple Silicon Mac에서 MLX로 **Qwen3-8B**(채팅)와 **bge-m3**(임베딩)를 직접 서빙한다.
+- Apple Silicon Mac에서 MLX로 **Qwen3-8B**(채팅), **bge-m3**(임베딩), **bge-reranker-v2-m3**(리랭크)를 직접 서빙한다.
 - PDF, TXT, Markdown 문서를 올리면 청크로 나눠 임베딩한 뒤 Postgres(pgvector)에 저장한다.
 - 챗봇(LibreChat)이 MCP 도구로 문서를 검색하고, 검색된 내용을 근거로 답한다.
 - 로컬 모델에 장애가 나면 LiteLLM이 Gemini로 넘겨 대화가 끊기지 않게 한다.
@@ -32,10 +33,10 @@ RAG 챗봇은 모델 서빙, 임베딩, 벡터 저장소, 검색 API, 모델 게
                          ┌─────────────────────── Docker ───────────────────────┐
  Browser ──► LibreChat ──┼─► LiteLLM (:4000) ──► vllm-mlx (host :8100) / Gemini │
    :3080         │       │                                                      │
-                 │ MCP   │    simple-rag (:3000) ──► Postgres + pgvector        │
-                 └───────┼──────────▲                                           │
-                         │          └─ embeddings ── vllm-mlx (host :8100)      │
-                         │    MongoDB (LibreChat users/chats)                   │
+                 |───────┼── simple-rag (:3000) ──► Postgres + pgvector         │
+                 │  MCP  │          ▲                                           │
+                 │       │          └─ embeddings ── vllm-mlx (host :8100)      │
+                 └───────┼──  MongoDB (LibreChat users/chats)                   │
                          └──────────────────────────────────────────────────────┘
 ```
 
@@ -45,7 +46,7 @@ RAG 챗봇은 모델 서빙, 임베딩, 벡터 저장소, 검색 API, 모델 게
 
 | 구성요소 | 위치 | 포트 | 역할 | 다루는 편 |
 |---|---|---|---|---|
-| vllm-mlx | 호스트(macOS) | 8100 | 채팅·임베딩 모델 서빙 | 2편 |
+| vllm-mlx | 호스트(macOS) | 8100 | 채팅·임베딩·리랭크 모델 서빙 | 2편 |
 | simple-rag | Docker | 3000 | 문서 업로드·벡터 검색 API, MCP 서버 | 3편 |
 | LiteLLM | Docker | 4000 | 모델 게이트웨이, 장애 시 Gemini fallback | 4편 |
 | LibreChat | Docker | 3080 | 챗봇 웹 UI, 사용자 등록/로그인 | 5편 |
@@ -72,7 +73,7 @@ RAG 챗봇은 모델 서빙, 임베딩, 벡터 저장소, 검색 API, 모델 게
 
 ---
 
-## 4. 설치 및 실행
+## 4. 시작하기
 
 ### 4.1 소스 코드 다운로드
 
@@ -112,7 +113,7 @@ cp .env.example .env   # 이미 .env가 있으면 건너뛴다
 | 변수 | 설명 |
 |---|---|
 | `LITELLM_MASTER_KEY` | LiteLLM 마스터 키. LibreChat이 이 값으로 LiteLLM에 접속하고, LiteLLM Admin UI 비밀번호로도 쓰인다. |
-| `GEMINI_API_KEY` | Gemini fallback용. 비워 두면 `docker compose` 실행 시 경고가 나오고, Gemini 모델 호출만 실패한다. 무료 키 발급은 [참고](#91-gemini_api_key-무료-키-발급)를 확인한다. |
+| `GEMINI_API_KEY` | Gemini fallback용. 비워 두면 `docker compose` 실행 시 경고가 나오고, Gemini 모델 호출만 실패한다. 무료 키 발급은 [참고](#1-gemini_api_key-무료-키-발급)를 확인한다. |
 
 `compose.yaml`의 `CREDS_KEY`, `JWT_SECRET`, DB 비밀번호는 개발용 placeholder다. 외부에 노출하기 전에는 반드시 바꿔야 한다.
 
@@ -222,35 +223,23 @@ rm -rf data/mongodb data/postgres
 
 ---
 
-## 7. 문제 해결
+## 7. 마무리
 
-| 증상 | 확인 |
-|---|---|
-| 업로드/검색이 `Embedding failed` 또는 연결 오류 | vllm-mlx가 떠 있는지(`curl localhost:8100/v1/models`), `VLLM_HOST=0.0.0.0`인지 확인 |
-| 업로드는 실패했는데 문서가 남아 있음 | 임베딩 실패 시 청크가 일부만 들어간 문서가 남는다. 청크 수가 비정상인 문서를 찾아 삭제한 뒤 다시 올린다. |
-| LibreChat이 오래 시작하지 않음 | `mcp-everything`의 `npm install`을 기다리는 중일 수 있다. `docker compose logs -f mcp-everything` |
-| 챗봇에서 MCP 도구를 호출하지 않음 | 로컬 `qwen3-8b`는 도구 호출이 불안정할 수 있다. 같은 대화를 `gemini-3.5-flash-lite`로 시도해 원인을 가른다. |
-| `qwen3-8b`가 응답 없이 Gemini로 넘어감 | LiteLLM fallback 동작이다. vllm-mlx 장애나 컨텍스트 초과 여부를 확인한다. |
-| `GEMINI_API_KEY is not set` 경고 | `.env`에 키를 넣거나 셸에서 export 한다. |
+vllm-mlx를 중심으로 simple-rag, LiteLLM, LibreChat을 연결해 로컬 RAG 챗봇 전체를 직접 실행하고, 문서 업로드와 검색, 챗봇의 MCP 도구 호출까지 동작을 확인했다.
+
+RAG 챗봇은 모델 서빙, 문서 검색, 게이트웨이, 챗봇 UI가 맞물려 동작하는 하나의 시스템이다. 특히 임베딩과 리랭크는 vllm-mlx에서만 처리되고 채팅도 기본적으로 이 추론 서버를 거치므로, 이를 어떻게 구성하고 제한된 메모리 안에서 운영하느냐가 전체 동작을 좌우한다. 이에 다음 편에서는 vllm-mlx의 서빙 모델과 설정값, 메모리 배분을 살펴본다.
 
 ---
 
-## 8. 시리즈 안내
+## 다음 편
 
-1편은 전체를 한 번 훑는 글이다. 각 구성요소의 설정값과 한계는 다음 편에서 다룬다.
-
-- **(2) 모델 서버 구성과 메모리 설계**: 48GB를 KV Cache, Prefix Cache, 모델에 어떻게 나눠 쓸 것인가
-- **(3) 문서 검색 API와 MCP 서버**: 청크 분할, 검색, 유사도 기준, MCP 도구 설계
-- **(4) LiteLLM 게이트웨이와 Fallback 전략**: 컨텍스트 한도, 장애 시 전환, 프라이버시 트레이드오프
-- **(5) LibreChat UI와 MCP 도구 연동**: 모델 노출, LiteLLM 연동, MCP 서버 등록
-
-실행 절차의 기준은 저장소의 README다. 이 글과 값이 다르면 README를 따른다.
+[2편](02-vllm-mlx.md)에서는 모델 서버인 vllm-mlx를 다룬다. 설정값과, 제한된 메모리를 모델, KV cache, prefix cache에 배분하는 방식을 설명한다.
 
 ---
 
-## 9. 참고
+## 참고
 
-### 9.1 GEMINI_API_KEY 무료 키 발급
+### 1. GEMINI_API_KEY 무료 키 발급
 
 1. [Google AI Studio](https://aistudio.google.com/apikey)에 Google 계정으로 로그인한다.
 2. **Create API key** 버튼을 눌러 키를 만든다.
@@ -259,3 +248,5 @@ rm -rf data/mongodb data/postgres
 이 프로젝트가 쓰는 `gemini-3.5-flash-lite`와 `gemini-3.1-flash-lite`는 [가격 문서](https://ai.google.dev/gemini-api/docs/pricing)에서 무료 등급이 제공되는 것으로 확인했다. 한도는 바뀔 수 있으니 같은 문서를 확인한다. 키는 비밀번호처럼 다뤄야 하며, `.env`를 저장소에 커밋하지 않는다.
 
 > **프라이버시 주의.** 가격 문서에 따르면 무료 등급에서는 입력한 콘텐츠가 Google의 제품 개선에 사용될 수 있다(유료 등급은 사용되지 않는다). fallback이 동작하면 RAG로 검색한 문서 내용이 Gemini로 전송되므로, 문서가 민감하다면 무료 키를 쓰지 않거나 `GEMINI_API_KEY`를 비워 fallback을 끄는 편이 맞다.
+
+

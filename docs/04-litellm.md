@@ -2,14 +2,12 @@
 
 [3편](03-simple-rag.md)에서는 문서 검색 API와 MCP 서버를 다루었다. 이번 편에서는 챗봇과 모델 서버 사이에서 요청을 중개하는 LiteLLM의 구성을 설명한다. LiteLLM 설정에서 핵심이 되는 사항은 두 가지다. 하나는 처리할 수 있는 요청의 범위를 정하는 컨텍스트 한도이고, 다른 하나는 로컬 모델이 요청을 처리하지 못할 때의 대응 방식인 fallback이다. 특히 fallback은 문서와 대화를 외부로 내보내지 않는다는 프로젝트의 전제와 충돌할 수 있으므로, 설계 시 프라이버시를 함께 고려해야 한다. 아울러 요청에 사용자 식별 헤더를 붙여 사용량을 사용자별로 나눠 보는 방법도 다룬다.
 
-이 글의 설정과 명령은 GitHub 저장소에 미리 준비된 코드를 기준으로 한다. 저장소를 아직 받지 않았다면 먼저 받고, 이후 명령은 받은 디렉터리에서 실행한다. LiteLLM은 vllm-mlx, Postgres와 함께 동작하므로 전체 스택을 띄우는 방법은 [1편](01-overview.md)의 3~4절을 따른다.
+이 글은 GitHub 저장소에 포함된 코드를 기준으로 설명한다. 저장소를 아직 클론하지 않았다면 다음과 같이 클론한다. LiteLLM은 vllm-mlx, Postgres와 함께 동작하므로 전체 스택을 띄우는 방법은 [1편](01-overview.md)의 3~4절을 따른다.
 
 ```bash
 git clone https://github.com/cnapcloud/mlx-rag-chatbot.git
 cd mlx-rag-chatbot
 ```
-
-> 이 시리즈의 구성과 설정값은 **M4 MacBook Pro, 48GB 메모리, GPU 16코어** 기준이다. 이 기기에 맞춘 선택이며, 범용 권장값이 아니다. 이 편의 컨텍스트 한도(28672 등)도 2편에서 이 기기에 맞춰 잡은 vllm-mlx 설정에서 나온 값이다.
 
 ---
 
@@ -24,18 +22,11 @@ cd mlx-rag-chatbot
 - 키, 사용자, 모델별 사용량과 비용의 집계
 - 로깅 도구 연동과 입출력 검사용 가드레일
 
-이 프로젝트에서는 이 가운데 다음 기능을 사용했다.
-
-- LibreChat은 LiteLLM 하나만 호출하고, LiteLLM이 요청을 로컬 모델(vllm-mlx)이나 Gemini로 전달
-- 로컬 모델이 응답하지 못할 때 Gemini로 넘기는 fallback
-- 모델 서버가 막아 주지 않는 입력 길이 한도의 사전 점검
-- 요청마다 붙는 사용자 식별 헤더와, 이를 이용한 Admin UI의 사용자별 사용량 확인
-
-반면 가상 키 발급, 예산 제한, 가드레일은 쓰지 않고 마스터 키 하나로 운영한다. 이후 순서는 실행(2절), 모델 등록(3절), 컨텍스트 한도(4절), fallback(5절), fallback과 프라이버시(6절), Admin UI(7절), 사용자 식별 헤더(8절)다.
+이 프로젝트에서 LiteLLM은 LibreChat과 모델 서버 사이의 단일 창구 역할을 한다. LibreChat은 LiteLLM 하나만 호출하고, LiteLLM이 요청을 로컬 모델(vllm-mlx)이나 Gemini로 전달한다. 로컬 모델이 응답하지 못하면 Gemini로 넘기는 fallback을 두고, 모델 서버가 막아 주지 않는 입력 길이 한도도 앞단에서 점검한다. 요청에 붙는 사용자 식별 헤더로는 Admin UI에서 사용량을 사용자별로 확인한다.
 
 ---
 
-## 2. LiteLLM 실행
+## 2. 시작하기
 
 LiteLLM은 [`compose.yaml`](../compose.yaml)의 `litellm` 서비스로 실행된다. 전체 스택은 [1편](01-overview.md)의 `docker compose up -d --build`로 함께 올라가고, LiteLLM만 따로 올릴 때는 다음과 같이 한다. `.env`에 `LITELLM_MASTER_KEY`와 `GEMINI_API_KEY`가 있어야 하고, Postgres는 `depends_on`으로 함께 시작된다.
 
@@ -92,18 +83,15 @@ model_list:
     litellm_params:
       model: gemini/gemini-3.5-flash-lite
       api_key: os.environ/GEMINI_API_KEY
-      additional_drop_params: ["litellm_proxy"]
 
   - model_name: gemini-3.1-flash-lite
     litellm_params:
       model: gemini/gemini-3.1-flash-lite
       api_key: os.environ/GEMINI_API_KEY
-      additional_drop_params: ["litellm_proxy"]
 ```
 
 - OpenAI 호환 API를 제공하는 vllm-mlx의 `openai/` 접두어 등록, 컨테이너에서 호스트로 나가는 `host.docker.internal:8100` 주소, 인증이 없어 임의 값을 넣은 `api_key`
 - `gemini/` 접두어로 등록한 Gemini 두 모델, 환경 변수 `GEMINI_API_KEY`에서 읽는 키, 기본 fallback 대상과 그 과부하 시 쓰는 예비 모델의 역할 분담
-- LibreChat이 보내는 `litellm_proxy: true`([5편](05-librechat.md)에서 설명)를 Gemini로 넘기지 않기 위한 모델별 `additional_drop_params` 제외
 
 모델은 이 파일 대신 관리 UI에서도 추가할 수 있다(7절에서 다룬다). 이 시리즈는 재현 가능하도록 파일을 기준으로 한다.
 
@@ -113,7 +101,7 @@ model_list:
 
 ### 4.1 입력 한도의 필요성
 
-2편에서 vllm-mlx에는 `--max-kv-size`(`VLLM_CONTEXT`)로 시퀀스당 32768 토큰을 잡았다. 그런데 2편의 이슈에 적었듯, 서버는 이 한도를 넘는 입력을 **막지 않는다.** 37K 입력도 오류 없이 처리되고 앞부분만 유지되는 식이다. 사용자 입장에서는 대화 앞쪽, 즉 시스템 프롬프트나 앞서 검색한 문서가 소리 없이 잘리는 셈이다. 그래서 입력이 한도를 넘는지는 서버 앞에서 확인해야 하고, 이 역할을 LiteLLM 게이트웨이가 맡는다.
+2편에서 vllm-mlx의 시퀀스당 한도는 `--max-kv-size`(`VLLM_CONTEXT`) 32768 토큰을 기준으로 설정했다. 이 옵션은 KV cache 크기를 정할 뿐 입력을 거부하지 않으며, 설계상으로는 한도를 넘으면 오래된 앞쪽 토큰이 밀려나야 한다. 그러나 2편의 이슈에 적었듯 실제로는 37K 입력도 오류 없이 처리되고 앞부분이 유지되어, 서버가 이 한도를 입력에 **강제하지 않는다.** 그래서 입력이 한도를 넘는지는 서버 앞에서 확인해야 하고, 이 역할을 LiteLLM 게이트웨이가 맡는다.
 
 ### 4.2 출력 토큰 예약
 
@@ -388,4 +376,4 @@ curl -s http://localhost:4000/spend/logs \
 
 ## 다음 편
 
-5편에서는 챗봇 UI인 LibreChat을 다룬다. 사용자 등록과 모델 노출, LiteLLM 연동, 그리고 MCP로 simple-rag를 연결하는 방법이다.
+[5편](05-librechat.md)에서는 챗봇 UI인 LibreChat을 다룬다. 사용자 등록과 모델 노출, LiteLLM 연동, 그리고 MCP로 simple-rag를 연결하는 방법이다.
