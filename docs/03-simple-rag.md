@@ -148,12 +148,12 @@ curl -X DELETE http://localhost:3000/documents/5665e76b-8119-41a1-bf21-b1f8100b6
 
 ```text
 [업로드]
- PDF / TXT / MD ─► 텍스트 추출 ─► documents 저장 ─► 청크 분할 ─► 청크마다 임베딩 ─► document_chunks 저장
-                                                  (450단어, 70단어 겹침)   (bge-m3, 1024차원)    (pgvector)
+ PDF / TXT / MD  ─►  텍스트 추출  ─►  documents 저장 ─► 청크 분할  ─►  청크마다 임베딩  ─►  document_chunks 저장
+                                            (450단어, 70단어 겹침)  (bge-m3, 1024차원)    (pgvector)
 
 [질문]
- 질문 ─► 질문 임베딩 ─► 벡터 검색 ─► 유사도 임계값 ─► 리랭크 ─► 프롬프트 조립 ─► LLM ─► 답변 + 출처
-                    (TOP_K)    (MIN_SIMILARITY) (RERANK_TOP_N)  └──── /ask만 ────┘
+ 질문 ─► 질문 임베딩  ─►  벡터 검색  ─►  유사도 임계값   ─►  리랭크  ─►  프롬프트 조립 ─►  LLM  ─►  답변 + 출처
+                      (TOP_K)  (MIN_SIMILARITY) (RERANK_TOP_N)   └──── /ask만 ────┘
 ```
 
 위쪽(업로드)은 이 절과 4절에서, 아래쪽(질문)은 5절에서 다룬다.
@@ -301,7 +301,51 @@ app.post("/mcp", async (request, reply) => {
 
 ---
 
-## 7. 마무리
+## 7. 벡터 저장소
+
+벡터 검색은 Postgres 확장인 pgvector로도, 전용 벡터 저장소로도 구현할 수 있다. 이 프로젝트는 별도 벡터 DB 없이 pgvector를 쓴다. pgvector의 특징과 규모가 커질 때 부딪히는 한계를 보고, 전용 저장소(Qdrant, Milvus 등)로 옮겨야 하는 경우를 정리한다.
+
+### 7.1 pgvector
+
+pgvector는 Postgres에 벡터 타입과 거리 연산자를 더하는 확장이다. 이 프로젝트에서는 별도 벡터 DB 없이 이미 쓰는 Postgres에 청크와 임베딩을 함께 저장한다.
+
+- 문서, 청크, 벡터를 한 DB에서 관리
+- `ON DELETE CASCADE`와 트랜잭션으로 정합성 유지
+- `WHERE`, `JOIN` 등 SQL 필터를 그대로 사용
+- LiteLLM과 컨테이너를 공유해 운영 대상 추가 없음
+
+반면 인덱스가 없으면 질문마다 모든 청크와 거리를 계산하므로 검색 시간이 청크 수에 비례해 늘어난다. 청크가 수만 개 수준까지는 문제가 되지 않지만, 규모가 커지면 근사 검색 인덱스를 추가한다.
+
+```sql
+CREATE INDEX ON document_chunks USING hnsw (embedding vector_cosine_ops);
+SET hnsw.iterative_scan = relaxed_order;  -- 0.8.0부터 지원, 필터 결과 부족 완화
+```
+
+인덱스를 추가해도 다음 한계가 남는다.
+
+- 인덱스 차원 상한: `vector` 2,000, `halfvec` 4,000
+- 근사 검색의 recall 손실과 HNSW의 메모리·빌드 비용
+- 필터는 인덱스 스캔 뒤에 적용되어 결과 부족 가능
+- 단일 노드 중심 구조, 샤딩 미내장
+- 주 DB와 CPU·메모리 공유
+
+필터 문제는 iterative scan 외에 부분 인덱스(필터 값이 적을 때)나 파티셔닝(값이 많을 때)으로 줄인다.
+
+### 7.2 전용 벡터 저장소
+
+Qdrant, Milvus 같은 전용 저장소는 벡터 검색만을 위한 확장 모델과 기능을 제공한다. 일반적으로 다음 경우에 검토한다.
+
+- 단일 Postgres가 감당하기 어려운 벡터 규모
+- 높은 동시 질의와 낮은 지연 요구
+- 벡터 검색이 주 DB의 트랜잭션 성능에 영향
+- 테넌트, 권한 필터를 검색 단계에서 즉시 적용
+- PQ 등 고급 양자화, GPU 인덱싱, 스트리밍 수집
+
+전용 저장소는 문서 삭제 같은 변경을 Postgres와 따로 동기화해야 하고 운영 대상도 늘어난다. 이미 Postgres를 쓰고 있고 벡터 규모가 크지 않다면 pgvector로 시작하고, 위 조건이 실제로 문제가 될 때 옮기는 편이 낫다. 검색은 `rag.ts`의 `searchDocuments` 한 곳에 모여 있어 저장소를 바꿔도 수정 범위가 이 함수의 쿼리로 한정된다.
+
+---
+
+## 8. 마무리
 
 이 글에서는 문서를 청크로 나눠 pgvector에 저장하고, 벡터 검색과 리랭크를 거쳐 답을 만들며, 같은 검색을 MCP 도구로 챗봇에 연결하는 구조를 살펴보았다. 이 구현은 RAG의 흐름을 이해하기 위한 PoC이며, 운영 수준으로 가려면 다음을 고려해야 한다.
 

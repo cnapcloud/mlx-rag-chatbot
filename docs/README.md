@@ -32,7 +32,8 @@ Apple Silicon Mac에서 vllm-mlx, pgvector, LiteLLM, LibreChat을 활용해 로�
 4. 데이터 모델
 5. 검색과 답변 생성 흐름
 6. MCP 서버
-7. 마무리
+7. 벡터 저장소
+8. 마무리
 
 ## [vllm-mlx 기반 RAG 챗봇 구축 (4) - LiteLLM 게이트웨이와 Fallback 전략](04-litellm.md)
 
