@@ -356,7 +356,7 @@ Qdrant, Milvus 같은 전용 저장소는 벡터 검색만을 위한 확장 모�
 - **답변 품질**: thinking 예산에 따른 답변 단축 검증
 - **보안**: REST와 MCP의 인증 및 접근 제어
 
-참고로, 상용 수준의 RAG 서비스는 [rag-docs.cnapcloud.com](https://rag-docs.cnapcloud.com)을 사용하여 구축할 있다.
+참고로, 상용 수준의 RAG 서비스는 [rag-docs.cnapcloud.com](https://rag-docs.cnapcloud.com)을 사용하여 구축할 수 있다.
 
 ---
 

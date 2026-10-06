@@ -199,7 +199,7 @@ docker compose logs -f litellm
 
 ## 6. MCP 서버 연동
 
-LibreChat이 simple-rag의 검색 도구를 쓰려면 `librechat.yaml`에 MCP 서버를 등록해야 한다. 이 프로젝트는 서버를 둘 등록한다. 하나는 문서 검색용 `simple-rag`([3편](03-simple-rag.md) 6절), 다른 하나는 동작 확인용 `everything`이다.
+MCP 서버는 [`config/librechat.yaml`](../config/librechat.yaml)의 `mcpServers`에 등록한다. 이 프로젝트에서는 2개를 등록한다. 하나는 문서 검색용 `simple-rag`([3편](03-simple-rag.md)), 다른 하나는 문서 없이 MCP 연결 자체를 확인하기 위한 `everything`이다.
 
 ### 6.1 서버 등록
 
