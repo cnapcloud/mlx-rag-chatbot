@@ -8,7 +8,7 @@ services:
       - ./data/mongodb:/data/db
 
   librechat:
-    image: ghcr.io/danny-avila/librechat:latest
+    image: ghcr.io/danny-avila/librechat:v0.8.7
     container_name: librechat
     restart: unless-stopped
     depends_on:
@@ -41,7 +41,7 @@ services:
       - ./config/librechat.yaml:/app/librechat.yaml:ro
 
   litellm:
-    image: ghcr.io/berriai/litellm:main-latest
+    image: ghcr.io/berriai/litellm:v1.104.0
     container_name: litellm
     restart: unless-stopped
     command: ["--config", "/app/litellm.yaml", "--port", "4000"]
