@@ -1,4 +1,6 @@
 # Apple Silicon(MLX) 기준 vllm-mlx 서빙 설정
+HF_VERSION := 1.28.0       # huggingface-hub (hf CLI)
+VLLM_VERSION := 0.4.1      # vllm-mlx
 VLLM_MODEL := mlx-community/Qwen3-8B-4bit
 VLLM_EMBED_MODEL := mlx-community/bge-m3-mlx-fp16
 VLLM_RERANK_MODEL := BAAI/bge-reranker-v2-m3
@@ -26,8 +28,8 @@ help: ## 사용 가능한 타겟 목록 표시
 # hf, vllm-mlx가 없을 때만 uv tool로 설치
 install: ## hf, vllm-mlx 설치 (uv tool)
 	@command -v uv >/dev/null || { echo "uv가 필요합니다: brew install uv"; exit 1; }
-	@command -v hf >/dev/null || uv tool install huggingface-hub
-	@command -v vllm-mlx >/dev/null || uv tool install vllm-mlx
+	@command -v hf >/dev/null || uv tool install huggingface-hub==$(HF_VERSION)
+	@command -v vllm-mlx >/dev/null || uv tool install vllm-mlx==$(VLLM_VERSION)
 
 download: install ## 채팅/임베딩/리랭크 모델 다운로드
 	hf download $(VLLM_MODEL)
